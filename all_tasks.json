@@ -1,0 +1,132 @@
+[
+    {
+        "points": 1,
+        "label": "Sesanje",
+        "day_interval": 1
+    },
+    {
+        "points": 4,
+        "label": "Posoda v stroj",
+        "day_interval": 1
+    },
+    {
+        "points": 3,
+        "label": "Posoda iz stroja",
+        "day_interval": 1
+    },
+    {
+        "points": 3,
+        "label": "Preveri pokvarjeno hrano",
+        "day_interval": 1
+    },
+    {
+        "points": 3,
+        "label": "Površine v kuhinji",
+        "day_interval": 1
+    },
+    {
+        "points": 1,
+        "label": "Sprazni pepelnike",
+        "day_interval": 1
+    },
+    {
+        "points": 2,
+        "label": "Miza zunaj",
+        "day_interval": 1
+    },
+    {
+        "points": 1,
+        "label": "Pospravi posteljo",
+        "day_interval": 1
+    },
+    {
+        "points": 2,
+        "label": "Prat cune",
+        "day_interval": 2
+    },
+    {
+        "points": 3,
+        "label": "Sušit cune",
+        "day_interval": 2
+    },
+    {
+        "points": 5,
+        "label": "Zložit in pospravt cune",
+        "day_interval": 2
+    },
+    {
+        "points": 4,
+        "label": "Rože",
+        "day_interval": 2
+    },
+    {
+        "points": 4,
+        "label": "Smeti",
+        "day_interval": 2
+    },
+    {
+        "points": 2,
+        "label": "Kopalnica umivalnik",
+        "day_interval": 3
+    },
+    {
+        "points": 2,
+        "label": "Ogledalo veža",
+        "day_interval": 3
+    },
+    {
+        "points": 12,
+        "label": "Kopalnica (tuš, wc, ogledalo)",
+        "day_interval": 7
+    },
+    {
+        "points": 10,
+        "label": "Pomivaje tal",
+        "day_interval": 7
+    },
+    {
+        "points": 10,
+        "label": "Prah",
+        "day_interval": 7
+    },
+    {
+        "points": 3,
+        "label": "Pajčevine",
+        "day_interval": 7
+    },
+    {
+        "points": 4,
+        "label": "Preoblečt posteljo",
+        "day_interval": 7
+    },
+    {
+        "points": 6,
+        "label": "Poemst teraso",
+        "day_interval": 7
+    },
+    {
+        "points": 2,
+        "label": "Očisti pralni stroj",
+        "day_interval": 30
+    },
+    {
+        "points": 5,
+        "label": "Očisti hladilnik",
+        "day_interval": 30
+    },
+    {
+        "points": 5,
+        "label": "Okna",
+        "day_interval": 60
+    },
+    {
+        "points": 8,
+        "label": "Pečica",
+        "day_interval": 60
+    },
+    {
+        "points": 15,
+        "label": "Kopalnica ploščice",
+        "day_interval": 60
+    }
+]
