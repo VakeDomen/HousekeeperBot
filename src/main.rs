@@ -143,11 +143,9 @@ fn display_score(
 fn init_queue() -> () {
     let all_tasks = ALL_TASKS.lock().unwrap();
     let mut queue = TASK_QUEUE.lock().unwrap();
-    if queue.len() == 0 {
-        warn!("Initializing task que");
-        fill_que(&all_tasks, &mut queue);
-    } else if queue.len() != all_tasks.len() {
+    if queue.len() != all_tasks.len() {
         warn!("Fixing queue! Missing tasks: {}", all_tasks.len() - queue.len());
+        fill_que(&all_tasks, &mut queue);
     } else {
         info!("Queue is all good! :)");
     }
@@ -161,8 +159,8 @@ fn fill_que(
     all_tasks: &MutexGuard<Vec<Task>>, 
     queue: &mut MutexGuard<Vec<QueTask>>
 ) -> () {
+    let today_option = Utc::now().naive_utc().checked_sub_signed(Duration::days(1));
     for task in all_tasks.iter() {
-        let today_option = Utc::now().naive_utc().checked_sub_signed(Duration::days(1));
         if let Some(today_ndt) = today_option {
             let today = NaiveDate::from_ymd(
                 today_ndt.year(), 
@@ -170,10 +168,24 @@ fn fill_que(
                 today_ndt.day()
             );
             if let Some(task_date) = today.checked_add_signed(Duration::days(task.day_interval as i64)) {
-                queue.push(QueTask {
-                    date: task_date,
-                    task_index: all_tasks.iter().position(|r| r.label == task.label).unwrap(),
-                })
+                // find index of task to add
+                // if task does not exist (always sould), skip to next task
+                let task_index_option = all_tasks.iter().position(|r| r.label == task.label);
+                let task_index = match task_index_option {
+                    Some(task_index) => task_index,
+                    None => continue
+                };
+                // if task not already in que, add it
+                // otherwise skip to next task
+                let que_index_option = queue.iter().position(|r| r.task_index == task_index);
+                match que_index_option {
+                    Some(_) => continue,
+                    None => queue.push(QueTask {
+                        date: task_date,
+                        task_index: task_index,
+                    })
+                };
+                
             }
         }
     }
