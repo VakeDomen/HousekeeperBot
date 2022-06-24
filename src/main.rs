@@ -1,14 +1,14 @@
-use chrono::{NaiveDate, Utc, Datelike};
+use chrono::{NaiveDate, Utc, Datelike, NaiveDateTime};
 use log::info;
 use teloxide::{prelude::*, utils::command::BotCommands};
 use chrono::Duration;
-use std::{fmt::Display, collections::HashMap};
-use std::str::FromStr;
+use std::collections::HashMap;
 use std::error::Error;
-use std::env;
+use std::{env, thread};
 use once_cell::sync::Lazy;
 use std::sync::{Mutex, MutexGuard};
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
+use tokio_cron_scheduler::{JobScheduler, Job};
 use dotenv::dotenv;
 
 extern crate pretty_env_logger;
@@ -61,7 +61,7 @@ struct QueTask {
     task_index: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct Task {
     points: i8,
     label: String,
@@ -91,8 +91,95 @@ async fn main() {
     pretty_env_logger::init();
     init_queue();
     let bot = Bot::from_env().auto_send();
-    println!("Running telegram bot!");
+    thread::spawn(|| {
+        run_cron();
+    });
+    info!("Running telegram bot!");
     teloxide::commands_repl(bot, answer, Command::ty()).await;
+}
+
+#[tokio::main]
+async fn run_cron() {
+    let mut sched = JobScheduler::new();
+
+    // add job for handling queue
+    // the job should add items from queue to current tasks
+    // the job should add new que items to the queue
+    match sched.add(Job::new_async("0 10,20,23,25,30,33,40,50,0 * * * *", move |_, _|  Box::pin(async { 
+        match refiresh_tasks().await {
+            Ok(_) => (),
+            Err(e) => error!("Error on refreshing tasks: {:?}", e)
+        }
+    })).unwrap()) {
+        Ok(c) => info!("Started cron!: {:?}", c),
+        Err(e) => error!("Something went wrong scheduling CRON: {:?}", e)
+    };
+
+    // add job for morning reminders of current tasks for the day
+
+
+    // set shudown handler
+    match sched.set_shutdown_handler(Box::new(|| {
+        Box::pin(async move {
+          info!("Shut down done");
+        })
+    })) {
+        Ok(c) => info!("Shutdown handler set for cron!: {:?}", c),
+        Err(e) => error!("Something went wrong setting shutdown handler for CRON: {:?}", e)
+    };
+
+    // start cron
+    if let Err(e) = sched.start().await {
+        error!("Error on scheduler {:?}", e);
+    }
+}
+
+
+async fn refiresh_tasks() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let today = ndt_to_nd(Utc::now().naive_utc());
+    
+    // claim mutexes
+    let all_tasks = ALL_TASKS.lock().unwrap();
+    let mut queue = TASK_QUEUE.lock().unwrap();
+    let mut current_tasks = CURRENT_TASKS.lock().unwrap();
+
+    // check if que is broken (if file deleted from disk or smth)
+    if queue.len() != all_tasks.len() {
+        fill_que(&all_tasks, &mut queue);
+    }
+
+    // refresh que (queue -> current)
+    for task in queue.iter_mut() {
+        if today.signed_duration_since(task.date).num_seconds() >= 0 {
+            // if it's time for the task, put it into current tasks
+            // first check if it already exists tho...
+            if let None = current_tasks.iter().position(|r| r.label == all_tasks[task.task_index].label) {
+                current_tasks.push(all_tasks[task.task_index].clone());
+            }
+     
+            // schedule task to next occurance in queue
+            // if somehow fails it does not modify the queue (will trigger again tommorow)
+            warn!("DATE: {:?} -> {:?}", task.date, task.date.checked_add_signed(Duration::days(all_tasks[task.task_index].day_interval as i64)));
+            task.date = match task.date.checked_add_signed(Duration::days(all_tasks[task.task_index].day_interval as i64)) {
+                Some(dt) => dt,
+                None => {
+                    error!("failed to move task in queue");
+                    task.date
+                }
+            };
+        }
+    }
+
+    //save changes to files
+    match serde_any::to_file(TASK_QUEUE_FILE_NAME, &*queue) {
+        Ok(_) => {},
+        Err(e) => {error!("Error saving task queue: {:?}", e);}
+    };
+    match serde_any::to_file(CURRENT_TASKS_FILE_NAME, &*current_tasks) {
+        Ok(_) => {},
+        Err(e) => {error!("Error saving curret tasks: {:?}", e);}
+    };
+    Ok(())   
 }
 
 async fn answer(
@@ -112,30 +199,30 @@ async fn answer(
 
 fn claim_task(
     _: &AutoSend<Bot>,
-    message: Message,
-    item_id: i8
+    _message: Message,
+    _item_id: i8
 ) -> String {
     "TODO".to_string()
 }
 
 fn pass_task(
     _: &AutoSend<Bot>,
-    message: Message,
-    item_id: i8
+    _message: Message,
+    _item_id: i8
 ) -> String {
     "TODO".to_string()
 }
 
 fn list_tasks(
     _: &AutoSend<Bot>,
-    message: Message,
+    _message: Message,
 ) -> String {
     "TODO".to_string()
 }
 
 fn display_score(
     _: &AutoSend<Bot>,
-    message: Message,
+    _message: Message,
 ) -> String {
     "TODO".to_string()
 }
@@ -151,7 +238,7 @@ fn init_queue() -> () {
     }
     match serde_any::to_file(TASK_QUEUE_FILE_NAME, &*queue) {
         Ok(_) => {},
-        Err(e) => {println!("Error saving task queue: {:?}", e);}
+        Err(e) => {error!("Error saving task queue: {:?}", e);}
     };
 }
 
@@ -162,11 +249,7 @@ fn fill_que(
     let today_option = Utc::now().naive_utc().checked_sub_signed(Duration::days(1));
     for task in all_tasks.iter() {
         if let Some(today_ndt) = today_option {
-            let today = NaiveDate::from_ymd(
-                today_ndt.year(), 
-                today_ndt.month(), 
-                today_ndt.day()
-            );
+            let today = ndt_to_nd(today_ndt);
             if let Some(task_date) = today.checked_add_signed(Duration::days(task.day_interval as i64)) {
                 // find index of task to add
                 // if task does not exist (always sould), skip to next task
@@ -189,4 +272,13 @@ fn fill_que(
             }
         }
     }
+}
+
+
+fn ndt_to_nd(ndt: NaiveDateTime) -> NaiveDate {
+    NaiveDate::from_ymd(
+        ndt.year(), 
+        ndt.month(), 
+        ndt.day()
+    )
 }
