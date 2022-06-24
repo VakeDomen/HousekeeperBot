@@ -1,132 +1,132 @@
 [
     {
         "points": 1,
-        "label": "Sesanje",
+        "label": "Sesanje 🧹",
         "day_interval": 1
     },
     {
         "points": 4,
-        "label": "Posoda v stroj",
+        "label": "Posoda v stroj 🍽",
         "day_interval": 1
     },
     {
         "points": 3,
-        "label": "Posoda iz stroja",
+        "label": "Posoda iz stroja 🍽",
         "day_interval": 1
     },
     {
         "points": 3,
-        "label": "Preveri pokvarjeno hrano",
+        "label": "Preveri pokvarjeno hrano 🍟",
         "day_interval": 1
     },
     {
         "points": 3,
-        "label": "Površine v kuhinji",
+        "label": "Površine v kuhinji 👨‍🍳",
         "day_interval": 1
     },
     {
         "points": 1,
-        "label": "Sprazni pepelnike",
+        "label": "Sprazni pepelnike 🚬",
         "day_interval": 1
     },
     {
         "points": 2,
-        "label": "Miza zunaj",
+        "label": "Miza zunaj 🌦",
         "day_interval": 1
     },
     {
         "points": 1,
-        "label": "Pospravi posteljo",
+        "label": "Pospravi posteljo 🛏",
         "day_interval": 1
     },
     {
         "points": 2,
-        "label": "Prat cune",
+        "label": "Prat cune 👕👚🧺",
         "day_interval": 2
     },
     {
         "points": 3,
-        "label": "Sušit cune",
+        "label": "Sušit cune 👕👚🧺",
         "day_interval": 2
     },
     {
         "points": 5,
-        "label": "Zložit in pospravt cune",
+        "label": "Zložit in pospravt cune 👕👚🧺",
         "day_interval": 2
     },
     {
         "points": 4,
-        "label": "Rože",
+        "label": "Rože 🪴🎋",
         "day_interval": 2
     },
     {
         "points": 4,
-        "label": "Smeti",
+        "label": "Smeti 🗑",
         "day_interval": 2
     },
     {
         "points": 2,
-        "label": "Kopalnica umivalnik",
+        "label": "Kopalnica umivalnik 🧼",
         "day_interval": 3
     },
     {
         "points": 2,
-        "label": "Ogledalo veža",
+        "label": "Ogledalo veža 🪞",
         "day_interval": 3
     },
     {
         "points": 12,
-        "label": "Kopalnica (tuš, wc, ogledalo)",
+        "label": "Kopalnica (tuš, wc, ogledalo) 🛁",
         "day_interval": 7
     },
     {
         "points": 10,
-        "label": "Pomivaje tal",
+        "label": "Pomivaje tal 🪣",
         "day_interval": 7
     },
     {
         "points": 10,
-        "label": "Prah",
+        "label": "Prah 🧽",
         "day_interval": 7
     },
     {
         "points": 3,
-        "label": "Pajčevine",
+        "label": "Pajčevine 🕸🕸",
         "day_interval": 7
     },
     {
         "points": 4,
-        "label": "Preoblečt posteljo",
+        "label": "Preoblečt posteljo 🛌",
         "day_interval": 7
     },
     {
         "points": 6,
-        "label": "Poemst teraso",
+        "label": "Poemst teraso 🧹🌦",
         "day_interval": 7
     },
     {
         "points": 2,
-        "label": "Očisti pralni stroj",
+        "label": "Očisti pralni stroj 🦠🧺",
         "day_interval": 30
     },
     {
         "points": 5,
-        "label": "Očisti hladilnik",
+        "label": "Očisti hladilnik ❄️🧀🍖",
         "day_interval": 30
     },
     {
         "points": 5,
-        "label": "Okna",
+        "label": "Okna 🪟🪟",
         "day_interval": 60
     },
     {
         "points": 8,
-        "label": "Pečica",
+        "label": "Pečica ♨️♨️",
         "day_interval": 60
     },
     {
         "points": 15,
-        "label": "Kopalnica ploščice",
+        "label": "Kopalnica ploščice 🌫🌫🌫",
         "day_interval": 60
     }
 ]

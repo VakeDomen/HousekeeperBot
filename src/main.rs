@@ -165,13 +165,41 @@ async fn notify() -> Result<(), Box<dyn Error + Send + Sync>> {
 fn construct_notification_text() -> String {
     let mut current_tasks = CURRENT_TASKS.lock().unwrap();
     let all_tasks = ALL_TASKS.lock().unwrap();
+    
     let mut out = String::from("Good morning! Today's tasks:\n");
     for task in current_tasks.iter_mut() {
         if let Some(original_task_index) = all_tasks.iter().position(|r| r.label == task.label) {
-            out = format!("{}\n{} 🟡\t{}p\t|\t{}", out, original_task_index,task.points, task.label);
+            out = format!("{}\n{}\t\t🟡\t{}p\t|\t{}", out, original_task_index,task.points, task.label);
+        }
+    }
+    let today_completed_tasks = get_today_completed_tasks();
+    if !today_completed_tasks.is_empty() {
+        out = format!("{}\n\nCompleted tasks: 💪🤙", out);
+        for (user_id, tasks) in today_completed_tasks.iter() {
+            for task in tasks.iter() {
+                out = format!("{}\n\t\t\t\t🟢\t{} ({})", out, all_tasks[task.task_index as usize].label, get_name(*user_id));
+            }
         }
     }
     out
+}
+
+fn get_today_completed_tasks() -> HashMap<UserId, Vec<QueTask>> {
+    let completed_tasks = COMPLETED_TASKS.lock().unwrap();
+    let mut map: HashMap<UserId, Vec<QueTask>> = HashMap::new();
+    let today = nd_now();
+    for (user_id, completed) in completed_tasks.iter() {
+        let mut users_tasks_today = Vec::new();
+        for task in completed.iter() {
+            if today.signed_duration_since(task.date).num_seconds() == 0 {
+                users_tasks_today.push(task.clone());
+            }
+        }
+        if !users_tasks_today.is_empty() {
+            map.insert(*user_id, users_tasks_today);
+        }
+    }
+    map
 }
 
 async fn refresh_tasks() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -306,6 +334,52 @@ fn claim_task(
     }
 }
 
+fn pass_task(
+    _: &AutoSend<Bot>,
+    _message: Message,
+    task_index: i8
+) -> String {
+    info!("Some user is claiming a task!");
+    let all_tasks = ALL_TASKS.lock().unwrap();
+    let mut current_tasks = CURRENT_TASKS.lock().unwrap();
+    
+    // find the claimed task
+    let mut claimed_task_index_option = None;
+    for (i, task) in current_tasks.iter_mut().enumerate() {
+        if task.label.eq(&all_tasks[task_index as usize].label) {
+            claimed_task_index_option = Some(i);
+        }
+    }
+    match claimed_task_index_option {
+        Some(index) => {
+            current_tasks.remove(index);
+            "Removed task from list".to_string()
+        },
+        None => "Unable to claim task (can't find task)!".to_string()
+    }
+}
+
+fn list_tasks(
+    _: &AutoSend<Bot>,
+    _message: Message,
+) -> String {
+    construct_notification_text()
+}
+
+fn display_score(
+    _: &AutoSend<Bot>,
+    _message: Message,
+) -> String {
+    let completed_tasks = COMPLETED_TASKS.lock().unwrap();
+    let all_tasks = ALL_TASKS.lock().unwrap();
+    let mut out = "".to_string();
+    for (user_id, tasks) in completed_tasks.iter() {
+        let score = &tasks.iter().map(|t| all_tasks[t.task_index].points as i64).sum::<i64>();
+        out = format!("{}\n{} -> {}", out, get_name(*user_id), score);
+    }
+    out    
+}
+
 fn set_name(message: &Message) -> String {
     let mut names = NAMES.lock().unwrap();
     if let Some(user) = message.from() {
@@ -335,28 +409,6 @@ fn get_name(user_id: UserId) -> String  {
         Some(n) => n.clone(),
         None => "Unknown user".to_string()
     }
-}
-
-fn pass_task(
-    _: &AutoSend<Bot>,
-    _message: Message,
-    _item_id: i8
-) -> String {
-    "TODO".to_string()
-}
-
-fn list_tasks(
-    _: &AutoSend<Bot>,
-    _message: Message,
-) -> String {
-    "TODO".to_string()
-}
-
-fn display_score(
-    _: &AutoSend<Bot>,
-    _message: Message,
-) -> String {
-    "TODO".to_string()
 }
 
 fn init_queue() {
