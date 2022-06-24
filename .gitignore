@@ -16,5 +16,5 @@ Cargo.lock
 .env
 current_tasks.json
 task_que.json
-points.json
+names.json
 completed_tasks.json

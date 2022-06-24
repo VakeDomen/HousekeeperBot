@@ -1,5 +1,6 @@
 use chrono::{NaiveDate, Utc, Datelike, NaiveDateTime};
 use log::info;
+use teloxide::types::User;
 use teloxide::{prelude::*, utils::command::BotCommands};
 use chrono::Duration;
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ extern crate pretty_env_logger;
 const CURRENT_TASKS_FILE_NAME: &str = "current_tasks.json";
 const ALL_TASKS_FILE_NAME: &str = "all_tasks.json";
 const TASK_QUEUE_FILE_NAME: &str = "task_que.json";
-const POINTS_FILE_NAME: &str = "points.json";
+const NAMES_FILE_NAME: &str = "names.json";
 const COMPLETED_TASKS_FILE_NAME: &str = "completed_tasks.json";
 
 static CURRENT_TASKS: Lazy<Mutex<Vec<Task>>> = Lazy::new(|| {
@@ -41,15 +42,15 @@ static TASK_QUEUE: Lazy<Mutex<Vec<QueTask>>> = Lazy::new(|| {
     }
 });
 
-static COMPLETED_TASKS: Lazy<Mutex<Vec<QueTask>>> = Lazy::new(|| {
+static COMPLETED_TASKS: Lazy<Mutex<HashMap<UserId, Vec<QueTask>>>> = Lazy::new(|| {
     match serde_any::from_file(COMPLETED_TASKS_FILE_NAME.to_string()) {
         Ok(hm) => Mutex::new(hm),
-        Err(_) => Mutex::new(vec![])
+        Err(_) => Mutex::new(HashMap::new())
     }
 });
 
-static POINTS: Lazy<Mutex<HashMap<i32, i64>>> = Lazy::new(|| {
-    match serde_any::from_file(POINTS_FILE_NAME.to_string()) {
+static NAMES: Lazy<Mutex<HashMap<UserId, String>>> = Lazy::new(|| {
+    match serde_any::from_file(NAMES_FILE_NAME.to_string()) {
         Ok(hm) => Mutex::new(hm),
         Err(_) => Mutex::new(HashMap::new())
     }
@@ -85,11 +86,16 @@ enum Command {
 
 #[tokio::main]
 async fn main() {
+    // setup env variables
     dotenv().ok();
-    let token = env::var("TELOXIDE_TOKEN").expect("$TELOXIDE_TOKEN is not set");
-    env::set_var("TELOXIDE_TOKEN", token);
+    env::set_var("TELOXIDE_TOKEN", env::var("TELOXIDE_TOKEN").expect("$TELOXIDE_TOKEN is not set"));
+    env::set_var("CHAT_ID", env::var("CHAT_ID").expect("$CHAT_ID is not set"));
+    
+    // init stuff
     pretty_env_logger::init();
     init_queue();
+
+    // run bot and CRON thread
     let bot = Bot::from_env().auto_send();
     thread::spawn(|| {
         run_cron();
@@ -106,7 +112,7 @@ async fn run_cron() {
     // the job should add items from queue to current tasks
     // the job should add new que items to the queue
     match sched.add(Job::new_async("0 10,20,23,25,30,33,40,50,0 * * * *", move |_, _|  Box::pin(async { 
-        match refiresh_tasks().await {
+        match refresh_tasks().await {
             Ok(_) => (),
             Err(e) => error!("Error on refreshing tasks: {:?}", e)
         }
@@ -116,7 +122,15 @@ async fn run_cron() {
     };
 
     // add job for morning reminders of current tasks for the day
-
+    match sched.add(Job::new_async("0 8,10,20,23,25,30,33,40,50,0 * * * *", move |_, _|  Box::pin(async { 
+        match notify().await {
+            Ok(_) => (),
+            Err(e) => error!("Error on refreshing tasks: {:?}", e)
+        }
+    })).unwrap()) {
+        Ok(c) => info!("Started cron!: {:?}", c),
+        Err(e) => error!("Something went wrong scheduling CRON: {:?}", e)
+    };
 
     // set shudown handler
     match sched.set_shutdown_handler(Box::new(|| {
@@ -135,8 +149,35 @@ async fn run_cron() {
 }
 
 
-async fn refiresh_tasks() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let today = ndt_to_nd(Utc::now().naive_utc());
+async fn notify() -> Result<(), Box<dyn Error + Send + Sync>> {
+    info!("Notifying chat of daily tasks!");
+    tokio::task::spawn(async move {
+        match Bot::from_env().auto_send().send_message(
+            env::var("CHAT_ID").expect("$CHAT_ID is not set"),
+            construct_notification_text()
+        ).await {
+            Ok(e) => (),
+            Err(e) => error!("{:?}", e),
+        };        
+    });
+    Ok(())
+}
+
+fn construct_notification_text() -> String {
+    let mut current_tasks = CURRENT_TASKS.lock().unwrap();
+    let all_tasks = ALL_TASKS.lock().unwrap();
+    let mut out = String::from("Good morning! Today's tasks:\n");
+    for task in current_tasks.iter_mut() {
+        if let Some(original_task_index) = all_tasks.iter().position(|r| r.label == task.label) {
+            out = format!("{}\n{} 🟡\t{}p\t|\t{}", out, original_task_index,task.points, task.label);
+        }
+    }
+    out
+}
+
+async fn refresh_tasks() -> Result<(), Box<dyn Error + Send + Sync>> {
+    info!("Refreshing tasks!");
+    let today = nd_now();
     
     // claim mutexes
     let all_tasks = ALL_TASKS.lock().unwrap();
@@ -159,7 +200,6 @@ async fn refiresh_tasks() -> Result<(), Box<dyn Error + Send + Sync>> {
      
             // schedule task to next occurance in queue
             // if somehow fails it does not modify the queue (will trigger again tommorow)
-            warn!("DATE: {:?} -> {:?}", task.date, task.date.checked_add_signed(Duration::days(all_tasks[task.task_index].day_interval as i64)));
             task.date = match task.date.checked_add_signed(Duration::days(all_tasks[task.task_index].day_interval as i64)) {
                 Some(dt) => dt,
                 None => {
@@ -199,10 +239,105 @@ async fn answer(
 
 fn claim_task(
     _: &AutoSend<Bot>,
-    _message: Message,
-    _item_id: i8
+    message: Message,
+    task_index: i8
 ) -> String {
-    "TODO".to_string()
+    info!("Some user is claiming a task!");
+    let all_tasks = ALL_TASKS.lock().unwrap();
+    let mut current_tasks = CURRENT_TASKS.lock().unwrap();
+    let mut completed_tasks = COMPLETED_TASKS.lock().unwrap();
+
+    // find the claimed task
+    let mut claimed_current_task_option = None;
+    let mut claimed_task_index_option = None;
+    for (i, task) in current_tasks.iter_mut().enumerate() {
+        if task.label.eq(&all_tasks[task_index as usize].label) {
+            claimed_current_task_option = Some(task.clone());
+            claimed_task_index_option = Some(i);
+        }
+    }
+
+    if let Some(claimed_current_task) = claimed_current_task_option {
+        info!("Found task");
+        // save claimer's name for display later on the score
+        set_name(&message);
+        
+        // insert task to user's hashmap of completed tasks
+        // generate response: if user exits (if not - something wtong with message and/or teloxide)
+        let response = if let Some(user) = message.from() {
+            // insert empty vector into hashmap if it's user's fisrt task
+            completed_tasks.entry(user.id).or_insert(Vec::new());
+            // insert the task into vector (as QueTask)
+            match completed_tasks.get_mut(&user.id) {
+                Some(users_competed_tasks) => {
+                    users_competed_tasks.push(QueTask {
+                        date: nd_now(),
+                        task_index: task_index as usize
+                    });
+                    format!("Claimed task! Awarded {} points! Use /score to see the score.", claimed_current_task.points)
+                },
+                None => {
+                    format!("Something went wrong claiming task! :(")
+                }
+            }
+        } else {
+            "Unable to extrac user".to_string()
+        };
+    
+        // remove task from current tasks
+        match claimed_task_index_option {
+            Some(index) => {current_tasks.remove(index);},
+            None => {},
+        };
+    
+        // save new state
+        // save current tasks
+        match serde_any::to_file(CURRENT_TASKS_FILE_NAME, &*current_tasks) {
+            Ok(_) => {},
+            Err(e) => {error!("Error saving task queue: {:?}", e);}
+        };
+        // save completed tasks
+        match serde_any::to_file(COMPLETED_TASKS_FILE_NAME, &*completed_tasks) {
+            Ok(_) => {},
+            Err(e) => {error!("Error saving task queue: {:?}", e);}
+        };
+
+        // return response
+        response
+    } else {
+        format!("Unable to claim task (can't find task)!")
+    }
+}
+
+fn set_name(message: &Message) -> String {
+    let mut names = NAMES.lock().unwrap();
+    if let Some(user) = message.from() {
+        match names.get(&user.id) {
+            Some(name) => name.clone(),
+            None => {
+                // extract data from message
+                let id = user.id.clone();
+                let name = user.first_name.clone();
+                // save user's name
+                names.insert(id, name);
+                // save changes to file
+                match serde_any::to_file(NAMES_FILE_NAME, &*names) {
+                    Ok(_) => {},
+                    Err(e) => {error!("Error saving names: {:?}", e);}
+                };
+                user.first_name.clone()
+            }
+        }
+    } else {
+        "Unknown sender".to_string()
+    }
+}
+
+fn get_name(user_id: UserId) -> String  {
+    match NAMES.lock().unwrap().get(&user_id)  {
+        Some(n) => n.clone(),
+        None => "Unknown user".to_string()
+    }
 }
 
 fn pass_task(
@@ -246,10 +381,9 @@ fn fill_que(
     all_tasks: &MutexGuard<Vec<Task>>, 
     queue: &mut MutexGuard<Vec<QueTask>>
 ) -> () {
-    let today_option = Utc::now().naive_utc().checked_sub_signed(Duration::days(1));
+    let today_option = nd_now().checked_sub_signed(Duration::days(1));
     for task in all_tasks.iter() {
-        if let Some(today_ndt) = today_option {
-            let today = ndt_to_nd(today_ndt);
+        if let Some(today) = today_option {
             if let Some(task_date) = today.checked_add_signed(Duration::days(task.day_interval as i64)) {
                 // find index of task to add
                 // if task does not exist (always sould), skip to next task
@@ -268,12 +402,15 @@ fn fill_que(
                         task_index: task_index,
                     })
                 };
-                
             }
         }
     }
 }
 
+
+fn nd_now() -> NaiveDate {
+    ndt_to_nd(Utc::now().naive_utc())
+}
 
 fn ndt_to_nd(ndt: NaiveDateTime) -> NaiveDate {
     NaiveDate::from_ymd(
