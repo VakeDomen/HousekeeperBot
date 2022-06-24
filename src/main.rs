@@ -110,7 +110,7 @@ async fn run_cron() {
     // add job for handling queue
     // the job should add items from queue to current tasks
     // the job should add new que items to the queue
-    match sched.add(Job::new_async("0 10,20,23,25,30,33,40,50,0 * * * *", move |_, _|  Box::pin(async { 
+    match sched.add(Job::new_async("0 0 0 * * *", move |_, _|  Box::pin(async { 
         match refresh_tasks().await {
             Ok(_) => (),
             Err(e) => error!("Error on refreshing tasks: {:?}", e)
@@ -121,7 +121,7 @@ async fn run_cron() {
     };
 
     // add job for morning reminders of current tasks for the day
-    match sched.add(Job::new_async("0 8,10,20,23,25,30,33,40,50,0 * * * *", move |_, _|  Box::pin(async { 
+    match sched.add(Job::new_async("0 0 7 * * *", move |_, _|  Box::pin(async { 
         match notify().await {
             Ok(_) => (),
             Err(e) => error!("Error on refreshing tasks: {:?}", e)
