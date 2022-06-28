@@ -301,7 +301,7 @@ fn claim_task(
                         date: nd_now(),
                         task_index: task_index as usize
                     });
-                    format!("Claimed task! Awarded {} points! Use /score to see the score.", claimed_current_task.points)
+                    format!("Claimed task {:?}! Awarded {} points! Use /score to see the score, or /list to see the remaining tasks.", claimed_current_task.label, claimed_current_task.points)
                 },
                 None => "Something went wrong claiming task! :(".to_string()
             }
