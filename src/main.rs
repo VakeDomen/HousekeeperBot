@@ -74,7 +74,7 @@ enum Command {
     #[command(description = "Display this text.")]
     Help,
     #[command(description = "Claim the task as done. This will award you the task points.")]
-    Claim(i8),
+    Claim(String),
     #[command(description = "Remove item from list if it does not need to be done: /pass <item number>")]
     Pass(i8),
     #[command(description = "List all items to be completed")]
@@ -256,7 +256,7 @@ async fn answer(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     match command {
         Command::Help                   => { bot.send_message(message.chat.id, Command::descriptions().to_string()).await? },
-        Command::Claim(item_id)     => { bot.send_message(message.chat.id, claim_task(&bot, message, item_id)).await? },
+        Command::Claim(item_ids)     => { bot.send_message(message.chat.id, claim_task(&bot, message, item_ids)).await? },
         Command::Pass(item_id)      => { bot.send_message(message.chat.id, pass_task(&bot, message, item_id)).await? },
         Command::List                   => { bot.send_message(message.chat.id, list_tasks(&bot, message)).await? },
         Command::Score                  => { bot.send_message(message.chat.id, display_score(&bot, message)).await? },
@@ -267,71 +267,90 @@ async fn answer(
 fn claim_task(
     _: &AutoSend<Bot>,
     message: Message,
-    task_index: i8
+    task_indexes: String
 ) -> String {
     info!("Some user is claiming a task!");
     let all_tasks = ALL_TASKS.lock().unwrap();
     let mut current_tasks = CURRENT_TASKS.lock().unwrap();
     let mut completed_tasks = COMPLETED_TASKS.lock().unwrap();
 
-    // find the claimed task
-    let mut claimed_current_task_option = None;
-    let mut claimed_task_index_option = None;
-    for (i, task) in current_tasks.iter_mut().enumerate() {
-        if task.label.eq(&all_tasks[task_index as usize].label) {
-            claimed_current_task_option = Some(task.clone());
-            claimed_task_index_option = Some(i);
+    // parse tasks
+    let ids: Vec<usize> = task_indexes
+        .split_whitespace()
+        .map(|id_str| id_str.parse::<usize>())
+        .take_while(|x|x.is_ok())
+        .map(|x|x.ok().unwrap())
+        .collect();
+    
+    if ids.len() < 1 {
+        return "No valid tasks claimed. Check if you claimed an avalible task. If you claimed multiple tasks, they should be split by a whitespace (/claim X Y Z).".to_string()
+    }
+
+    let mut out = "Use /score to see the score, or /list to see the remaining tasks.".to_string();
+    let separator = if ids.len() > 1 { "\n" } else { "" };
+
+    for task_index in ids.iter() {
+
+        // find the claimed task
+        let mut claimed_current_task_option = None;
+        let mut claimed_task_index_option = None;
+        for (i, task) in current_tasks.iter_mut().enumerate() {
+            if task.label.eq(&all_tasks[*task_index as usize].label) {
+                claimed_current_task_option = Some(task.clone());
+                claimed_task_index_option = Some(i);
+            }
+        }
+    
+        if let Some(claimed_current_task) = claimed_current_task_option {
+            info!("Found task");
+            // save claimer's name for display later on the score
+            set_name(&message);
+            
+            // insert task to user's hashmap of completed tasks
+            // generate response: if user exits (if not - something wtong with message and/or teloxide)
+            let response = if let Some(user) = message.from() {
+                // insert empty vector into hashmap if it's user's fisrt task
+                completed_tasks.entry(user.id).or_insert(Vec::new());
+                // insert the task into vector (as QueTask)
+                match completed_tasks.get_mut(&user.id) {
+                    Some(users_competed_tasks) => {
+                        users_competed_tasks.push(QueTask {
+                            date: nd_now(),
+                            task_index: *task_index as usize
+                        });
+                        format!("Claimed task {:?}! Awarded {} points! ", claimed_current_task.label, claimed_current_task.points)
+                    },
+                    None => format!("Something went wrong claiming task {:?}! :(", claimed_current_task.label)
+                }
+            } else {
+                format!("Unable to extract user for task {:?}! :(", claimed_current_task.label)
+            };
+        
+            // remove task from current tasks
+            match claimed_task_index_option {
+                Some(index) => {current_tasks.remove(index);},
+                None => {},
+            };
+        
+            // save new state
+            // save current tasks
+            match serde_any::to_file(CURRENT_TASKS_FILE_NAME, &*current_tasks) {
+                Ok(_) => {},
+                Err(e) => {error!("Error saving task queue: {:?}", e);}
+            };
+            // save completed tasks
+            match serde_any::to_file(COMPLETED_TASKS_FILE_NAME, &*completed_tasks) {
+                Ok(_) => {},
+                Err(e) => {error!("Error saving task queue: {:?}", e);}
+            };
+    
+            // return response
+            out = format!("{}{}{}", response, separator, out);
+        } else {
+            out = format!("Unable to claim task (can't find task)!{}{}", separator, out);
         }
     }
-
-    if let Some(claimed_current_task) = claimed_current_task_option {
-        info!("Found task");
-        // save claimer's name for display later on the score
-        set_name(&message);
-        
-        // insert task to user's hashmap of completed tasks
-        // generate response: if user exits (if not - something wtong with message and/or teloxide)
-        let response = if let Some(user) = message.from() {
-            // insert empty vector into hashmap if it's user's fisrt task
-            completed_tasks.entry(user.id).or_insert(Vec::new());
-            // insert the task into vector (as QueTask)
-            match completed_tasks.get_mut(&user.id) {
-                Some(users_competed_tasks) => {
-                    users_competed_tasks.push(QueTask {
-                        date: nd_now(),
-                        task_index: task_index as usize
-                    });
-                    format!("Claimed task {:?}! Awarded {} points! Use /score to see the score, or /list to see the remaining tasks.", claimed_current_task.label, claimed_current_task.points)
-                },
-                None => "Something went wrong claiming task! :(".to_string()
-            }
-        } else {
-            "Unable to extrac user".to_string()
-        };
-    
-        // remove task from current tasks
-        match claimed_task_index_option {
-            Some(index) => {current_tasks.remove(index);},
-            None => {},
-        };
-    
-        // save new state
-        // save current tasks
-        match serde_any::to_file(CURRENT_TASKS_FILE_NAME, &*current_tasks) {
-            Ok(_) => {},
-            Err(e) => {error!("Error saving task queue: {:?}", e);}
-        };
-        // save completed tasks
-        match serde_any::to_file(COMPLETED_TASKS_FILE_NAME, &*completed_tasks) {
-            Ok(_) => {},
-            Err(e) => {error!("Error saving task queue: {:?}", e);}
-        };
-
-        // return response
-        response
-    } else {
-        "Unable to claim task (can't find task)!".to_string()
-    }
+    out
 }
 
 fn pass_task(
