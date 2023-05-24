@@ -30,7 +30,7 @@ static CURRENT_TASKS: Lazy<Mutex<Vec<Task>>> = Lazy::new(|| {
 static ALL_TASKS: Lazy<Mutex<Vec<Task>>> = Lazy::new(|| {
     match serde_any::from_file(ALL_TASKS_FILE_NAME) {
         Ok(hm) => Mutex::new(hm),
-        Err(_) => Mutex::new(vec![])
+        Err(e) => {println!("{:#?}", e.to_string());Mutex::new(vec![])}
     }
 });
 
@@ -167,10 +167,16 @@ fn construct_notification_text() -> String {
     let all_tasks = ALL_TASKS.lock().unwrap();
     
     let mut out = String::from("Good morning! Today's tasks:\n");
-    for task in current_tasks.iter_mut() {
+    let mut tasks = vec![];
+    for task in current_tasks.iter_mut() {        
         if let Some(original_task_index) = all_tasks.iter().position(|r| r.label == task.label) {
-            out = format!("{}\n{}\t\t🟡\t{}p\t|\t{}", out, original_task_index,task.points, task.label);
+            tasks.push((original_task_index,task.points, task.label.clone(), task.day_interval));
         }
+    }
+    tasks.sort_by_key(|task| task.0);
+    for (original_task_index, points, label, interval) in tasks.into_iter() {
+        let circle = if interval == 0 { "🟡" } else { "🔴" };
+        out = format!("{}\n{}\t\t{}\t{}p\t|\t{}", out, original_task_index, circle, points, label);
     }
     let today_completed_tasks = get_today_completed_tasks();
     if !today_completed_tasks.is_empty() {
@@ -355,10 +361,15 @@ fn claim_task(
         out
 
     };
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    if let Err(e) = rt.block_on(refresh_tasks()) {
-        return format!("Something went wrong refreshing tasks {:#?}", e.to_string());
-    }
+
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async {
+            if let Err(_) = refresh_tasks().await {
+                ()
+            }
+        });
+    });
+
     
     out
 }
